@@ -20,3 +20,8 @@ describe('Heavens Above Project', () => {
     expect(1 + 1).toBe(2);
   });
 });
+
+test('test function works', () => {
+    const { testFunction } = require('../test-change');
+    expect(testFunction()).toBe("Hello World");
+});
