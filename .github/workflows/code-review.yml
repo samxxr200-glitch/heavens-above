@@ -1,0 +1,136 @@
+name: Code Review Automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  code-analysis:
+    name: Code Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Run linting
+      run: npm run lint
+    
+    - name: Check code complexity
+      run: |
+        echo "📊 Code Complexity Analysis"
+        echo "=========================="
+        # Simple complexity check - count lines in files
+        echo "File sizes:"
+        find src/ -name "*.js" -exec wc -l {} \; | sort -nr | head -10 || echo "No src files found"
+        echo ""
+        echo "Largest files (watch for potential refactoring needs):"
+        find . -name "*.js" -not -path "./node_modules/*" -exec wc -l {} \; | sort -nr | head -5
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run security audit
+      run: |
+        echo "Running security scan..."
+        npm audit --audit-level high || echo "Security scan completed with findings"
+    
+    - name: Check for sensitive data
+      run: |
+        echo "Checking for potential sensitive data..."
+        # Basic check for common sensitive patterns
+        grep -r "password\|secret\|key\|token" --include="*.js" --include="*.json" . || echo "No obvious sensitive data patterns found"
+
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    needs: [code-analysis, security-scan]
+    
+    steps:
+    - name: Generate quality report
+      run: |
+        echo "# Code Quality Report" > quality-report.md
+        echo "## Pull Request: ${{ github.event.pull_request.title }}" >> quality-report.md
+        echo "### Branch: ${{ github.head_ref }}" >> quality-report.md
+        echo "" >> quality-report.md
+        echo "##  Quality Checks:" >> quality-report.md
+        echo "- Tests must pass" >> quality-report.md
+        echo "- Linting must pass" >> quality-report.md  
+        echo "- Security audit completed" >> quality-report.md
+        echo "- No sensitive data detected" >> quality-report.md
+        echo "" >> quality-report.md
+        echo "## Next Steps:" >> quality-report.md
+        echo "1. Review test results above" >> quality-report.md
+        echo "2. Check linting output for code style issues" >> quality-report.md
+        echo "3. Verify security audit findings" >> quality-report.md
+        echo "4. Ensure all checks pass before merging" >> quality-report.md
+        echo "" >> quality-report.md
+        echo "*This report was automatically generated*"
+    
+    - name: Upload quality report
+      uses: actions/upload-artifact@v4
+      with:
+        name: code-quality-report
+        path: quality-report.md
+        retention-days: 30
+
+  pr-size-check:
+    name: PR Size Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check PR size
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          
+          const totalChanges = files.reduce((sum, file) => sum + file.additions + file.deletions, 0);
+          
+          if (totalChanges > 500) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: ` **Large PR Alert**: This PR contains ${totalChanges} changes. Consider breaking it into smaller PRs for easier review.`
+            });
+          } else if (totalChanges > 1000) {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: ` **Very Large PR**: This PR contains ${totalChanges} changes. Strongly recommend breaking into multiple smaller PRs.`
+            });
+          }
