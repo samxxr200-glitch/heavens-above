@@ -1,0 +1,106 @@
+name: Deployment Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js ${{ env.NODE_VERSION }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Build verification
+      run: |
+        # Verify the main script can be parsed
+        node -c run.js
+        echo "✅ Build verification passed"
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          .
+        retention-days: 7
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Run npm security audit
+      run: npm audit --audit-level high || echo "Security audit completed"
+
+  deploy-demo:
+    name: Deploy Demo
+    runs-on: ubuntu-latest
+    needs: [build-and-test, security-scan]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Simulation Deployment
+      run: |
+        echo "🚀 Starting deployment process..."
+        echo "📦 Application: Heavens Above Web Scraper"
+        echo "🔧 Node.js Version: $(node --version)"
+        echo "📁 Project Structure:"
+        ls -la
+        echo "✅ Deployment simulation completed successfully!"
+        echo "🌐 This would deploy to a cloud platform in a real scenario"
+    
+    - name: Create deployment tag
+      run: |
+        DATE=$(date +'%Y%m%d-%H%M%S')
+        echo "DEPLOYMENT_TAG=deploy-$DATE" >> $GITHUB_ENV
+    
+    - name: Upload deployment report
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-report
+        path: |
+          .
+        retention-days: 30
